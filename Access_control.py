@@ -8,6 +8,7 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import icmp
+from ryu.lib.packet import arp
 
 class Access_control(app_manager.RyuApp):
 	OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -44,8 +45,8 @@ class Access_control(app_manager.RyuApp):
 	@set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
 	def packet_in_handler(self, ev):
 		"When a packet_in message is received policy is enforced"
-		self.packet_restriction = 1
-		self.group_restriction = 1
+		packet_restriction = 1
+		group_restriction = 1
 		G1 = ["10.10.1.1", "10.10.1.2"]
 		G2 = ["10.10.1.3"]
 		
@@ -55,14 +56,40 @@ class Access_control(app_manager.RyuApp):
 		parser = datapath.ofproto_parser
 		
 		pkt = packet.Packet(msg.data)
-		eth_packet = pkt.get_protocols(ethernet.ethernet)
-		print(eth_packet)
-	
-		ip_packet = pkt.get_protocols(ipv4.ipv4)
-		print(ip_packet)
+		
+		# print(eth_packet)
+		arp_packet = pkt.get_protocols(arp.arp)
+		source_ip = arp_packet[0].src_ip
+		destination_ip = arp_packet[0].dst_ip
+		
+		if source_ip in G1:
+			src_g = 1
+		elif source_ip in G2:
+			src_g = 2
+		else: 
+			src_g = 0
+		
+		if destination_ip in G1:
+			dest_g = 1
+		elif destination_ip in G2:
+			dest_g = 2
+		else:
+			dest_g = 0
+		
+		
+		if group_restriction == 1:
+			if dest_g == src_g:
+				print("Allow Packet Transfer")
+			else:
+				print("Deny the Access")
+		else:
+			print("Allow Access")
+		
 
-		tcp_packet = pkt.get_protocols(icmp.icmp)
-		print(tcp_packet)
+		
+
+		# tcp_packet = pkt.get_protocols(icmp.icmp)
+		# print(tcp_packet)
 		
 		# dst = ip_packet.dst
 		# src = ip_packet.src
