@@ -16,7 +16,8 @@ class Access_control(app_manager.RyuApp):
 	def __init__(self, *args, **kwargs):
 		"This is counstructor"
 		super(Access_control, self).__init__(*args, **kwargs)
-		print("First RYU APP for Internet Project")
+		self.mac_to_port = {}
+		print("First RYU APP")
 	
 	@set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
 	def switch_features_handler(self, ev):
@@ -41,12 +42,50 @@ class Access_control(app_manager.RyuApp):
 		mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
 					match=match, instructions=inst)
 		datapath.send_msg(mod)
+
+	def allow_access(self,pkt, msg):
+		"To allow Access for communication"
+		datapath = msg.datapath
+		ofproto = datapath.ofproto
+		parser = datapath.ofproto_parser
+		dpid = datapath.id
+		self.mac_to_port.setdefault(dpid, {})		
+
+		eth_packet = pkt.get_protocol(ethernet.ethernet)
+		src = eth_packet.src
+		dst = eth_packet.dst
+
+
+		in_port = msg.match['in_port']
+		self.mac_to_port[dpid][src] = in_port
+		
+		if dst in self.mac_to_port[dpid]:
+			out_port = self.mac_to_port[dpid][dst]
+		else:
+			out_port = ofproto.OFPP_FLOOD
+		
+		actions = [parser.OFPActionOutput(out_port)]		
+
+		if out_port != ofproto.OFPP_FLOOD:
+			match = parser.OFPMatch(in_port = in_port, eth_dst = dst)
+			self.add_flow(datapath, 1, match, actions)
+		
+		out = parser.OFPPacketOut(datapath = datapath, 
+					  buffer_id = ofproto.OFP_NO_BUFFER,
+					  in_port = in_port, actions = actions,
+					  data = msg.data)
+		
+		datapath.send_msg(out)
+					  	
+	def deny_access(self):
+		"To deny access for communication"
+	
 	
 	@set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
 	def packet_in_handler(self, ev):
 		"When a packet_in message is received policy is enforced"
 		packet_restriction = 1
-		group_restriction = 1
+		group_restriction = 0
 		G1 = ["10.10.1.1", "10.10.1.2"]
 		G2 = ["10.10.1.3"]
 		
@@ -54,19 +93,29 @@ class Access_control(app_manager.RyuApp):
 		datapath = msg.datapath
 		ofproto = datapath.ofproto
 		parser = datapath.ofproto_parser
+
+		# dpid = datapath.id
 		
 		pkt = packet.Packet(msg.data)
-		
-		# print(eth_packet)
+		# print(pkt.protocols)
 		arp_packet = pkt.get_protocols(arp.arp)
-		source_ip = arp_packet[0].src_ip
-		destination_ip = arp_packet[0].dst_ip
+		ipv4_packet = pkt.get_protocols(ipv4.ipv4)
+		if arp_packet:
+			print(arp_packet)
+			source_ip = arp_packet[0].src_ip
+			destination_ip = arp_packet[0].dst_ip
+		elif ipv4_packet:
+			print("IPV4 Packet: ", ipv4_packet)
+			source_ip = ipv4_packet[0].src
+			destination_ip = ipv4_packet[0].dst
+			print("Source: ", source_ip)
+			print("Destiation: ", destination_ip)
 		
 		if source_ip in G1:
 			src_g = 1
 		elif source_ip in G2:
 			src_g = 2
-		else: 
+		else:
 			src_g = 0
 		
 		if destination_ip in G1:
@@ -76,23 +125,18 @@ class Access_control(app_manager.RyuApp):
 		else:
 			dest_g = 0
 		
-		
 		if group_restriction == 1:
 			if dest_g == src_g:
 				print("Allow Packet Transfer")
+				self.allow_access(pkt, msg)
 			else:
 				print("Deny the Access")
+				self.deny_access()
 		else:
 			print("Allow Access")
+			self.allow_access(pkt, msg)
+			
 		
-
-		
-
-		# tcp_packet = pkt.get_protocols(icmp.icmp)
-		# print(tcp_packet)
-		
-		# dst = ip_packet.dst
-		# src = ip_packet.src
 		
 		
 		
