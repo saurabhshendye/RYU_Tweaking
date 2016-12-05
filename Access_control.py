@@ -111,8 +111,13 @@ class Access_control(app_manager.RyuApp):
         arp_packet = pkt.get_protocol(arp.arp)
         ipv4_packet = pkt.get_protocol(ipv4.ipv4)
 
-        source = arp_packet.src_ip
-        dest = arp_packet.dst_ip
+	if arp_packet:
+	        source = arp_packet.src_ip
+        	dest = arp_packet.dst_ip
+	elif ipv4_packet:
+		source = ipv4_packet.src
+		dest = ipv4_packet.dst
+
         src = eth_packet.src
         dst = eth_packet.dst
 
@@ -137,7 +142,6 @@ class Access_control(app_manager.RyuApp):
         global packet_restriction
         global group_restriction
 
-        # data = '{"Policy": [{"group_isolation": "0", "UDP_packet_restriction": "0"}], "Groups": [{"1": {"host_ips": ["10.10.1.1", "10.10.1.2", "10.10.1.3"]}, "2": {"host_ips": ["10.10.1.4"]}}]}'
         f = open('Received.txt', 'r')
         data = f.read()
         f.close()
@@ -158,14 +162,21 @@ class Access_control(app_manager.RyuApp):
         return master_ip_list, grp_name_list
 
     def find_grp(self, master_ip_list, ip):
-        for sublist in master_ip_list:
+	flag = 0
+	for sublist in master_ip_list:
             # print("sublist", sublist)
             if ip in sublist:
                 # print "Found it!", sublist
-                break
-        found_grp = master_ip_list.index(sublist)
-
-        return found_grp
+                #found_grp = master_ip_list.index(sublist)
+		flag = 1
+		break
+	if flag ==1:
+		found_grp =  master_ip_list.index(sublist)
+		return found_grp
+	else:
+		return None
+	
+       # found_grp = master_ip_list.index(sublist)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
@@ -176,7 +187,6 @@ class Access_control(app_manager.RyuApp):
         # G1 = ["10.10.1.1", "10.10.1.2"]
         # G2 = ["10.10.1.3"]
         master_ip_list, grp_name_list = self.jparsing()
-
 
         msg = ev.msg
 
@@ -199,9 +209,27 @@ class Access_control(app_manager.RyuApp):
         elif ipv4_packet:
             source_ip = ipv4_packet[0].src
             destination_ip = ipv4_packet[0].dst
+	
+	print("Source IP: ", source_ip)
+	print("Destination IP: ", destination_ip)
+	
+	index = self.find_grp(master_ip_list, source_ip)
+	print(index)
+	if index is not None:
+		src_g = str(grp_name_list[index])
+		print("IP: {}, Group: {}".format(source_ip, src_g))
+	else:
+		print("IP: {} not found in the list. Access Denied".format(source_ip))
+		return
 
-        src_g = str(grp_name_list[self.find_grp(master_ip_list, source_ip)])
-        dest_g = str(grp_name_list[self.find_grp(master_ip_list, destination_ip)])
+	index = self.find_grp(master_ip_list, destination_ip)
+	print(index)
+	if index is not None:
+		dest_g = str(grp_name_list[index])
+		print("IP: {} , Group: {}".format(destination_ip, dest_g))
+	else:
+		print("IP: {} not found in the list. Access Denied".format(destination_ip))
+		return
 
 
         # if source_ip in G1:
